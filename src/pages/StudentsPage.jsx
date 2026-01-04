@@ -34,6 +34,9 @@ function StudentsPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [pageIndex, setPageIndex] = useState(0);
 
+  // 🔹 반 설정(class_types) 목록
+  const [classTypes, setClassTypes] = useState([]);
+
   // 신규 등록 폼 토글 + 상태 (재원생 직접 등록용)
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newStudent, setNewStudent] = useState({
@@ -71,6 +74,19 @@ function StudentsPage() {
     return onSnapshot(qy, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setQuitStudents(list);
+    });
+  }, []);
+
+  // ───── 반 설정(class_types) 구독 ─────
+  useEffect(() => {
+    const ref = collection(db, "class_types");
+    const qy = query(ref, orderBy("order", "asc"));
+    return onSnapshot(qy, (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        // isActive가 false인 건 숨기고, undefined / true는 표시
+        .filter((ct) => ct.isActive !== false);
+      setClassTypes(list);
     });
   }, []);
 
@@ -189,6 +205,8 @@ function StudentsPage() {
         studentPhone,
         startDate,
         status: "재원생",
+        // 처음 등록 시에는 반 정보 비워둠(나중에 상세에서 선택)
+        classTypes: [],
         createdAt: serverTimestamp(),
       };
 
@@ -259,6 +277,10 @@ function StudentsPage() {
         startDate,
         schedules: schedulesArray,
         status: "재원생",
+        // newstudent에 classTypes 있으면 유지, 없으면 빈 배열
+        classTypes: Array.isArray(student.classTypes)
+          ? student.classTypes
+          : [],
         approvedAt: serverTimestamp(),
       });
 
@@ -318,6 +340,10 @@ function StudentsPage() {
         startDate,
         schedules: schedulesArray,
         status: "퇴원",
+        // 퇴원할 때도 classTypes 유지
+        classTypes: Array.isArray(student.classTypes)
+          ? student.classTypes
+          : [],
         quitAt: serverTimestamp(),
       });
 
@@ -377,6 +403,10 @@ function StudentsPage() {
         startDate,
         schedules: schedulesArray,
         status: "재원생",
+        // 복귀 시에도 기존 classTypes 유지
+        classTypes: Array.isArray(student.classTypes)
+          ? student.classTypes
+          : [],
         restoredFromQuitAt: serverTimestamp(),
       });
 
@@ -806,6 +836,8 @@ function StudentsPage() {
               onApprove={handleApproveNewStudent}
               onQuit={handleQuitStudent}
               onRestore={handleRestoreStudent}
+              // 🔹 반 목록 전달
+              classTypes={classTypes}
             />
           </div>
         </div>
@@ -815,13 +847,23 @@ function StudentsPage() {
 }
 
 /** 상세 정보 + 스케줄/신규상담 정보 */
-function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
+function StudentDetail({
+  tab,
+  student,
+  onApprove,
+  onQuit,
+  onRestore,
+  classTypes,
+}) {
   const [editName, setEditName] = useState("");
   const [editBirth, setEditBirth] = useState("");
   const [editParentPhone, setEditParentPhone] = useState("");
   const [editStudentPhone, setEditStudentPhone] = useState("");
   const [editStartDate, setEditStartDate] = useState("");
   const [editSchedules, setEditSchedules] = useState([]);
+
+  // 🔹 학생이 속한 반들 (문자 label 배열)
+  const [editClassTypes, setEditClassTypes] = useState([]);
 
   // 신규 상담 & 신청 정보
   const [newEnrolls, setNewEnrolls] = useState([]); // newenroll 컬렉션
@@ -837,6 +879,7 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
       setEditSchedules([]);
       setNewEnrolls([]);
       setOperationEnroll(null);
+      setEditClassTypes([]);
       return;
     }
 
@@ -850,6 +893,12 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
       setEditSchedules(student.schedules);
     } else {
       setEditSchedules([{ day: "", time: "" }]);
+    }
+
+    if (Array.isArray(student.classTypes)) {
+      setEditClassTypes(student.classTypes);
+    } else {
+      setEditClassTypes([]);
     }
   }, [student]);
 
@@ -916,6 +965,8 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
       parentPhone: editParentPhone,
       studentPhone: editStudentPhone,
       startDate: editStartDate,
+      // 🔹 반 정보 저장
+      classTypes: editClassTypes,
     });
 
     alert("✔ 기본 정보 저장 완료!");
@@ -957,6 +1008,14 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
   const consultType = student.consultType || "";
   const siblingName = student.siblingName || "";
   const referralName = student.referralName || "";
+
+  const toggleClassType = (label) => {
+    setEditClassTypes((prev) =>
+      prev.includes(label)
+        ? prev.filter((t) => t !== label)
+        : [...prev, label]
+    );
+  };
 
   return (
     <div style={{ fontSize: 12 }}>
@@ -1003,6 +1062,45 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
           onChange={(e) => setEditStartDate(e.target.value)}
           style={{ ...inputStyle, width: "100%" }}
         />
+
+        {/* 🔹 반 선택(중복 가능) */}
+        <div style={labelStyle}>반</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {(!classTypes || classTypes.length === 0) && (
+            <div style={{ fontSize: 11, color: "#9ca3af" }}>
+              반 설정 탭에서 먼저 반을 등록해주세요.
+            </div>
+          )}
+          {classTypes &&
+            classTypes.map((ct) => {
+              const label = ct.label || "";
+              const checked = editClassTypes.includes(label);
+              return (
+                <label
+                  key={ct.id}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "2px 6px",
+                    borderRadius: 999,
+                    border: "1px solid #d1d5db",
+                    background: checked ? "#eff6ff" : "white",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleClassType(label)}
+                    style={{ width: 10, height: 10 }}
+                  />
+                  <span>{label}</span>
+                </label>
+              );
+            })}
+        </div>
       </div>
 
       <button
@@ -1147,7 +1245,7 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
         </div>
       )}
 
-      {/* 신규생: 상담 + newenroll + 연산반 신청 정보 보여주기 */}
+      {/* 신규생: 상담 + newenroll + 집중학습반 신청 정보 보여주기 */}
       {tab === "new" && (
         <div
           style={{
@@ -1215,15 +1313,15 @@ function StudentDetail({ tab, student, onApprove, onQuit, onRestore }) {
           <div style={{ borderTop: "1px dashed #d1d5db", margin: "6px 0" }} />
 
           <div style={{ marginBottom: 4, fontWeight: "bold" }}>
-            ✏ 연산반 신청(operation_enroll)
+            ✏ 집중학습반 신청(operation_enroll)
           </div>
           {operationEnroll ? (
             <div style={{ fontSize: 11 }}>
-              연산반 시간: <b>{operationEnroll.time || "-"}</b>
+              집중학습반 시간: <b>{operationEnroll.time || "-"}</b>
             </div>
           ) : (
             <div style={{ fontSize: 11, color: "#9ca3af" }}>
-              operation_enroll 컬렉션에 연산반 신청 내역이 없습니다.
+              operation_enroll 컬렉션에 집중학습반 신청 내역이 없습니다.
             </div>
           )}
         </div>

@@ -6,18 +6,28 @@ import NoticesPage from "./pages/NoticesPage";
 import HolidaysPage from "./pages/HolidaysPage";
 import PointsPage from "./pages/PointsPage";
 import EnrollmentsPage from "./pages/EnrollmentsPage";
+
 // 🔽 새로 추가된 페이지들
 import StudentsPage from "./pages/StudentsPage";
 import BooksCommentsPage from "./pages/BooksCommentsPage";
+
 // 🔽 결제 관리 페이지
 import PaymentsPage from "./pages/PaymentsPage";
+import MonthlyPaymentsPage from "./pages/MonthlyPaymentsPage";
+
+import ClassTypesPage from "./pages/ClassTypesPage";
+
+// ✅ 출석부(관리자) 페이지 추가
+import AdminAttendanceBookPage from "./pages/AdminAttendanceBookPage.jsx";
 
 const ADMIN_PASSWORD = "0606";
 
 function App() {
   const [authorized, setAuthorized] = useState(false);
   const [inputPassword, setInputPassword] = useState("");
-  const [activePage, setActivePage] = useState("notices"); // 기본: 공지사항
+
+  // ✅ 기본 페이지
+  const [activePage, setActivePage] = useState("notices");
 
   useEffect(() => {
     const saved = localStorage.getItem("admin_login");
@@ -39,6 +49,7 @@ function App() {
         <h1 style={{ fontSize: 20, fontWeight: "bold", marginBottom: 16 }}>
           🔐 관리자 로그인
         </h1>
+
         <input
           type="password"
           placeholder="비밀번호 입력"
@@ -52,6 +63,7 @@ function App() {
             width: 200,
           }}
         />
+
         <button
           onClick={() => {
             if (inputPassword === ADMIN_PASSWORD) {
@@ -95,15 +107,12 @@ function App() {
         <h1 style={{ fontSize: 18, fontWeight: "bold" }}>
           연상수학 관리자 (mathlove)
         </h1>
+
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span
-            style={{
-              fontSize: 11,
-              color: "#6b7280",
-            }}
-          >
+          <span style={{ fontSize: 11, color: "#6b7280" }}>
             0606 로그인 유지 중
           </span>
+
           <button
             onClick={() => {
               localStorage.removeItem("admin_login");
@@ -139,37 +148,62 @@ function App() {
             active={activePage === "notices"}
             onClick={() => setActivePage("notices")}
           />
+
           <NavItem
             label="휴일관리"
             active={activePage === "holidays"}
             onClick={() => setActivePage("holidays")}
           />
+
           <NavItem
             label="포인트관리"
             active={activePage === "points"}
             onClick={() => setActivePage("points")}
           />
+
           <NavItem
             label="수강신청"
             active={activePage === "enrollments"}
             onClick={() => setActivePage("enrollments")}
           />
+
           {/* 🔽 새로 추가된 메뉴들 */}
           <NavItem
             label="학생관리"
             active={activePage === "students"}
             onClick={() => setActivePage("students")}
           />
+
+          <NavItem
+            label="반관리"
+            active={activePage === "classTypes"}
+            onClick={() => setActivePage("classTypes")}
+          />
+
           <NavItem
             label="책 · 코멘트"
             active={activePage === "booksComments"}
             onClick={() => setActivePage("booksComments")}
           />
+
           {/* 🔽 결제 관리 */}
           <NavItem
             label="결제관리"
             active={activePage === "payments"}
             onClick={() => setActivePage("payments")}
+          />
+
+          <NavItem
+            label="월별결제관리"
+            active={activePage === "monthlyPayments"}
+            onClick={() => setActivePage("monthlyPayments")}
+          />
+
+          {/* ✅ 출석부(관리자) 메뉴 추가 */}
+          <NavItem
+            label="출석부(관리자)"
+            active={activePage === "adminAttendanceBook"}
+            onClick={() => setActivePage("adminAttendanceBook")}
           />
         </aside>
 
@@ -187,10 +221,18 @@ function App() {
             {activePage === "holidays" && <HolidaysPage />}
             {activePage === "points" && <PointsPage />}
             {activePage === "enrollments" && <EnrollmentsPage />}
+
             {/* 🔽 새 페이지 렌더링 */}
             {activePage === "students" && <StudentsPage />}
+            {activePage === "classTypes" && <ClassTypesPage />}
             {activePage === "booksComments" && <BooksCommentsPage />}
+
+            {/* 🔽 결제 */}
             {activePage === "payments" && <PaymentsPage />}
+            {activePage === "monthlyPayments" && <MonthlyPaymentsPage />}
+
+            {/* ✅ 출석부(관리자) 렌더링 */}
+            {activePage === "adminAttendanceBook" && <AdminAttendanceBookPage />}
           </div>
         </main>
       </div>

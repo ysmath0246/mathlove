@@ -64,7 +64,7 @@ function getGradeGroupFromStudent(st) {
   return "";
 }
 
-// 🔹 출생연도 기준 기본 수강료
+// 🔹 출생연도 기준 기본 수강료 (단위: 만원)
 function getBaseAmountFromStudent(st) {
   const year = getBirthYear(st);
   if (year) {
@@ -183,7 +183,7 @@ export default function PaymentsPage() {
     setDrafts(map);
   }, [students, payments, billingKey]);
 
-  // 🔹 저장 함수 (overrideDraft로 새 값 넘길 수 있게 수정)
+  // 🔹 저장 함수 (overrideDraft로 새 값 넘길 수 있게)
   async function handleSave(st, overrideDraft) {
     const draft = overrideDraft || drafts[st.id];
     if (!draft) return;
@@ -218,8 +218,6 @@ export default function PaymentsPage() {
     setSavingId(st.id);
     try {
       await setDoc(ref, payload, { merge: true });
-      // 자동 저장일 때는 alert 안 띄우는 게 편하면 여기 조건 넣어도 됨
-      // alert(`${st.name || st.studentName || ""} ${billingKey} 결제 정보가 저장되었습니다.`);
     } catch (e) {
       console.error("save payment error", e);
       alert("저장 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
@@ -308,7 +306,7 @@ export default function PaymentsPage() {
     })
     .sort((a, b) => collator.compare(a._displayName, b._displayName));
 
-  // 🔹 현재 필터 기준 "완료" 건만 총 매출 합계
+  // 🔹 현재 필터 기준 "완료" 건만 총 매출 합계 (만원 단위 합계)
   const totalRevenue = filteredStudents.reduce((sum, st) => {
     const d = drafts[st.id] || {};
     if (d.status !== "완료") return sum;
@@ -366,272 +364,319 @@ export default function PaymentsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const yearLabel = `${year}년 ${month}월`;
+
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="text-xl md:text-2xl font-semibold mb-4">결제 관리</h1>
-
-      {/* 상단 필터 영역 */}
-      <div className="mb-3 flex flex-wrap gap-3 items-center">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">정산 연도</span>
-          <select
-            className="border rounded px-2 py-1 text-sm"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>
-                {y}년
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">월</span>
-          <select
-            className="border rounded px-2 py-1 text-sm"
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-          >
-            {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {m}월
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="text-sm text-gray-500">
-          기준월 : <span className="font-semibold">{billingKey}</span>
-        </div>
-
-        {/* 🔍 이름 검색 */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">이름 검색</span>
-          <input
-            type="text"
-            className="border rounded px-2 py-1 text-sm"
-            placeholder="이름 일부 입력"
-            value={searchName}
-            onChange={(e) => setSearchName(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* 🔹 상단 초/중/고 탭 */}
-      <div className="mb-2 flex gap-2 flex-wrap">
-        {[
-          { key: "all", label: "전체" },
-          { key: "초등", label: "초등" },
-          { key: "중등", label: "중등" },
-          { key: "고등", label: "고등" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setGradeTab(tab.key)}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm border ${
-              gradeTab === tab.key
-                ? "bg-blue-500 text-white border-blue-500"
-                : "bg-white text-gray-700 border-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 🔹 결제 상태 탭 (전체 / 미결제만) */}
-      <div className="mb-4 flex gap-2 flex-wrap">
-        {[
-          { key: "all", label: "전체 결제" },
-          { key: "unpaid", label: "미결제만" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setStatusTab(tab.key)}
-            className={`px-3 py-1 rounded-full text-xs md:text-sm border ${
-              statusTab === tab.key
-                ? "bg-red-500 text-white border-red-500"
-                : "bg-white text-gray-700 border-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 🔹 엑셀(CSV) 다운로드 버튼 */}
-      <div className="mb-3 flex justify-end">
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          className="px-3 py-1 rounded text-xs md:text-sm bg-green-600 text-white hover:bg-green-700"
-        >
-          📁 현재 목록 엑셀(CSV) 다운로드
-        </button>
-      </div>
-
-      {/* 메인 카드 */}
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        {loading ? (
-          <div className="p-4 text-sm text-gray-500">불러오는 중...</div>
-        ) : filteredStudents.length === 0 ? (
-          <div className="p-4 text-sm text-gray-500">
-            해당 조건의 학생이 없습니다.
+    <div className="p-4 md:p-6 bg-slate-50 min-h-screen">
+      <div className="max-w-6xl mx-auto">
+        {/* 상단 헤더 */}
+        <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
+              결제 관리
+            </h1>
+            <p className="text-xs md:text-sm text-slate-500 mt-1">
+              기준월: <span className="font-semibold">{billingKey}</span>{" "}
+              (정산용 {yearLabel})
+            </p>
           </div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-xs md:text-sm border-t">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-2 py-2 border-b text-left">이름</th>
-                  <th className="px-2 py-2 border-b text-left">학년</th>
-                  <th className="px-2 py-2 border-b text-left">구분</th>
-                  <th className="px-2 py-2 border-b text-left">상태</th>
-                  <th className="px-2 py-2 border-b text-right">기본금액</th>
-                  <th className="px-2 py-2 border-b text-right">할인</th>
-                  <th className="px-2 py-2 border-b text-right">실제금액</th>
-                  <th className="px-2 py-2 border-b text-left">방법</th>
-                  <th className="px-2 py-2 border-b text-left">결제일</th>
-                  <th className="px-2 py-2 border-b text-left">메모</th>
-                  <th className="px-2 py-2 border-b text-center">저장</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.map((st) => {
-                  const d = drafts[st.id] || {};
 
-                  return (
-                    <tr key={st.id} className="hover:bg-gray-50">
-                      <td className="px-2 py-1 border-b whitespace-nowrap">
-                        {st._displayName || "-"}
-                      </td>
-                      <td className="px-2 py-1 border-b whitespace-nowrap">
-                        {st._gradeLabel || "-"}
-                      </td>
-                      <td className="px-2 py-1 border-b whitespace-nowrap">
-                        {st._gradeGroup || "-"}
-                      </td>
-                      <td className="px-2 py-1 border-b">
-                        <select
-                          className="border rounded px-1 py-0.5 text-xs md:text-sm"
-                          value={d.status || "미결제"}
-                          onChange={(e) =>
-                            updateDraft(st.id, "status", e.target.value)
-                          }
-                        >
-                          <option value="미결제">미결제</option>
-                          <option value="완료">완료</option>
-                          <option value="부분">부분</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-1 border-b text-right">
-                        <input
-                          type="number"
-                          className="border rounded px-1 py-0.5 w-20 text-right text-xs md:text-sm"
-                          value={d.baseAmount ?? ""}
-                          onChange={(e) =>
-                            updateDraft(st.id, "baseAmount", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-1 border-b text-right">
-                        <input
-                          type="number"
-                          className="border rounded px-1 py-0.5 w-20 text-right text-xs md:text-sm"
-                          value={d.discountAmount ?? 0}
-                          onChange={(e) =>
-                            updateDraft(
-                              st.id,
-                              "discountAmount",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-1 border-b text-right">
-                        <input
-                          type="number"
-                          className="border rounded px-1 py-0.5 w-20 text-right text-xs md:text-sm"
-                          value={d.finalAmount ?? ""}
-                          onChange={(e) =>
-                            updateDraft(st.id, "finalAmount", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-1 border-b">
-                        <select
-                          className="border rounded px-1 py-0.5 text-xs md:text-sm"
-                          value={d.method || ""}
-                          onChange={(e) =>
-                            updateDraft(st.id, "method", e.target.value)
-                          }
-                        >
-                          <option value="">선택</option>
-                          <option value="계좌">계좌</option>
-                          <option value="결제선생">결제선생</option>
-                          <option value="카드">카드</option>
-                          <option value="현금">현금</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-1 border-b">
-                        <input
-                          type="date"
-                          className="border rounded px-1 py-0.5 text-xs md:text-sm"
-                          value={d.paidAt || ""}
-                          onChange={(e) =>
-                            updateDraft(st.id, "paidAt", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-1 border-b">
-                        <input
-                          type="text"
-                          className="border rounded px-1 py-0.5 w-32 md:w-40 text-xs md:text-sm"
-                          value={d.memo || ""}
-                          onChange={(e) =>
-                            updateDraft(st.id, "memo", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-1 border-b text-center">
-                        <button
-                          onClick={() => handleSave(st)}
-                          disabled={savingId === st.id}
-                          className={`px-2 py-1 rounded text-xs md:text-sm ${
-                            savingId === st.id
-                              ? "bg-gray-300 text-gray-600"
-                              : "bg-indigo-500 text-white hover:bg-indigo-600"
-                          }`}
-                        >
-                          {savingId === st.id ? "저장중" : "저장"}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/* 연/월 선택 */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">정산 연도</span>
+              <select
+                className="border rounded px-2 py-1 text-xs md:text-sm bg-white"
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}년
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">월</span>
+              <select
+                className="border rounded px-2 py-1 text-xs md:text-sm bg-white"
+                value={month}
+                onChange={(e) => setMonth(Number(e.target.value))}
+              >
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}월
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* 🔹 총 매출 합계 (현재 필터 기준, 완료만) */}
-      <div className="mt-3 text-right text-sm md:text-base text-gray-700">
-        현재 목록 기준 <span className="font-semibold">완료 건</span> 총 매출 :{" "}
-        <span className="font-semibold text-indigo-600">
-          {totalRevenue.toLocaleString()} 만원
-        </span>
-      </div>
+        {/* 두 번째 줄: 탭 + 상태 필터 */}
+        <div className="flex flex-col gap-2 mb-3 md:flex-row md:items-center md:justify-between">
+          {/* 학교급 탭 */}
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { key: "all", label: "전체" },
+              { key: "초등", label: "초등" },
+              { key: "중등", label: "중등" },
+              { key: "고등", label: "고등" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setGradeTab(tab.key)}
+                className={`px-3 py-1 rounded-full text-xs md:text-sm border transition ${
+                  gradeTab === tab.key
+                    ? "bg-blue-500 text-white border-blue-500 shadow-sm"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-      <p className="mt-2 text-xs text-gray-400">
-        ※ 각 행은 선택된 기준월(<b>{billingKey}</b>) 기준 결제 정보입니다. 저장 시
-        <code className="mx-1">payments</code> 컬렉션에{" "}
-        <code>studentId_billingKey</code> 형태의 문서가 기록됩니다.
-      </p>
+          {/* 결제 상태 탭 */}
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { key: "all", label: "전체 결제" },
+              { key: "unpaid", label: "미결제만" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setStatusTab(tab.key)}
+                className={`px-3 py-1 rounded-full text-xs md:text-sm border transition ${
+                  statusTab === tab.key
+                    ? "bg-rose-500 text-white border-rose-500 shadow-sm"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 세 번째 줄: 검색 + CSV + 요약 */}
+        <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">이름 검색</span>
+            <input
+              type="text"
+              className="border rounded px-2 py-1 text-xs md:text-sm bg-white"
+              placeholder="이름 일부 입력"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-3 justify-between md:justify-end">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="px-3 py-1 rounded text-xs md:text-sm bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1"
+            >
+              <span>📁</span>
+              <span>현재 목록 CSV 다운로드</span>
+            </button>
+
+            <div className="text-[11px] md:text-xs text-gray-600 bg-white border border-gray-200 rounded px-3 py-1">
+              <span className="mr-2">
+                인원:{" "}
+                <b className="text-gray-900">{filteredStudents.length}</b>명
+              </span>
+              <span>
+                완료 매출:{" "}
+                <b className="text-indigo-600">
+                  {totalRevenue.toLocaleString()} 만원
+                </b>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 메인 카드 */}
+        <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-slate-200">
+          {loading ? (
+            <div className="p-4 text-sm text-gray-500">불러오는 중...</div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="p-4 text-sm text-gray-500">
+              해당 조건의 학생이 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-[70vh]">
+              <table className="min-w-full text-xs md:text-sm">
+                <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700">
+                      이름
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700">
+                      학년
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700 hidden sm:table-cell">
+                      구분
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700">
+                      상태
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-slate-700">
+                      기본금액
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-slate-700">
+                      할인
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-slate-700">
+                      실제금액
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700 hidden md:table-cell">
+                      방법
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700">
+                      결제일
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-slate-700 hidden md:table-cell">
+                      메모
+                    </th>
+                    <th className="px-3 py-2 text-center font-medium text-slate-700">
+                      저장
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStudents.map((st, idx) => {
+                    const d = drafts[st.id] || {};
+                    const rowBg = idx % 2 === 0 ? "bg-white" : "bg-slate-50";
+
+                    return (
+                      <tr
+                        key={st.id}
+                        className={`${rowBg} hover:bg-indigo-50 transition-colors`}
+                      >
+                        <td className="px-3 py-1.5 border-t border-slate-100 whitespace-nowrap">
+                          {st._displayName || "-"}
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 whitespace-nowrap">
+                          {st._gradeLabel || "-"}
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 whitespace-nowrap hidden sm:table-cell">
+                          {st._gradeGroup || "-"}
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100">
+                          <select
+                            className="border rounded px-1 py-0.5 text-[11px] md:text-xs bg-white"
+                            value={d.status || "미결제"}
+                            onChange={(e) =>
+                              updateDraft(st.id, "status", e.target.value)
+                            }
+                          >
+                            <option value="미결제">미결제</option>
+                            <option value="완료">완료</option>
+                            <option value="부분">부분</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 text-right">
+                          <input
+                            type="number"
+                            className="border rounded px-1 py-0.5 w-16 md:w-20 text-right text-[11px] md:text-xs bg-slate-50"
+                            value={d.baseAmount ?? ""}
+                            onChange={(e) =>
+                              updateDraft(st.id, "baseAmount", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 text-right">
+                          <input
+                            type="number"
+                            className="border rounded px-1 py-0.5 w-16 md:w-20 text-right text-[11px] md:text-xs bg-slate-50"
+                            value={d.discountAmount ?? 0}
+                            onChange={(e) =>
+                              updateDraft(
+                                st.id,
+                                "discountAmount",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 text-right">
+                          <input
+                            type="number"
+                            className="border rounded px-1 py-0.5 w-16 md:w-20 text-right text-[11px] md:text-xs bg-white font-semibold"
+                            value={d.finalAmount ?? ""}
+                            onChange={(e) =>
+                              updateDraft(st.id, "finalAmount", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 hidden md:table-cell">
+                          <select
+                            className="border rounded px-1 py-0.5 text-[11px] md:text-xs bg-white"
+                            value={d.method || ""}
+                            onChange={(e) =>
+                              updateDraft(st.id, "method", e.target.value)
+                            }
+                          >
+                            <option value="">선택</option>
+                            <option value="계좌">계좌</option>
+                            <option value="결제선생">결제선생</option>
+                            <option value="카드">카드</option>
+                            <option value="현금">현금</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100">
+                          <input
+                            type="date"
+                            className="border rounded px-1 py-0.5 text-[11px] md:text-xs bg-white"
+                            value={d.paidAt || ""}
+                            onChange={(e) =>
+                              updateDraft(st.id, "paidAt", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 hidden md:table-cell">
+                          <input
+                            type="text"
+                            className="border rounded px-1 py-0.5 w-32 md:w-40 text-[11px] md:text-xs bg-white"
+                            value={d.memo || ""}
+                            onChange={(e) =>
+                              updateDraft(st.id, "memo", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 border-t border-slate-100 text-center">
+                          <button
+                            onClick={() => handleSave(st)}
+                            disabled={savingId === st.id}
+                            className={`px-2 py-1 rounded text-[11px] md:text-xs ${
+                              savingId === st.id
+                                ? "bg-gray-300 text-gray-600 cursor-wait"
+                                : "bg-indigo-500 text-white hover:bg-indigo-600"
+                            }`}
+                          >
+                            {savingId === st.id ? "저장중" : "저장"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <p className="mt-3 text-[11px] text-gray-400">
+          ※ 각 행은 선택된 기준월(<b>{billingKey}</b>) 기준 결제 정보입니다. 저장 시{" "}
+          <code className="mx-1">payments</code> 컬렉션에{" "}
+          <code>studentId_billingKey</code> 형태의 문서가 기록됩니다.
+        </p>
+      </div>
     </div>
   );
 }
