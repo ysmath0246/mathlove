@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/mathlove/static/css/main.e6c13ad2.css",
-    "main.js": "/mathlove/static/js/main.9de0c10b.js",
+    "main.js": "/mathlove/static/js/main.663c1e4a.js",
     "static/js/453.e16844fb.chunk.js": "/mathlove/static/js/453.e16844fb.chunk.js",
     "index.html": "/mathlove/index.html",
     "main.e6c13ad2.css.map": "/mathlove/static/css/main.e6c13ad2.css.map",
-    "main.9de0c10b.js.map": "/mathlove/static/js/main.9de0c10b.js.map",
+    "main.663c1e4a.js.map": "/mathlove/static/js/main.663c1e4a.js.map",
     "453.e16844fb.chunk.js.map": "/mathlove/static/js/453.e16844fb.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.e6c13ad2.css",
-    "static/js/main.9de0c10b.js"
+    "static/js/main.663c1e4a.js"
   ]
 }
