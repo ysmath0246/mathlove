@@ -40,6 +40,32 @@ function getCurrentMonthString() {
 }
 
 
+// startDate가 있으면 그 달(YYYY-MM)부터만 보이게 하기
+function getStudentStartMonth(st) {
+  const raw =
+    st.startDate ||
+    st.start_date ||
+    st.startdate ||
+    st.enrollDate ||
+    st.enroll_date ||
+    "";
+
+  if (!raw) return null;
+
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+
+  // startDate가 속한 달의 1일로 정규화
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function isMonthBefore(monthStr, startMonthDate) {
+  if (!startMonthDate) return false;
+  const monthDate = monthStringToDate(monthStr); // 이미 있는 함수 (YYYY-MM -> Date(그달 1일))
+  return monthDate < startMonthDate;
+}
+
+
 // --------------------
 // 학년/학교급 계산
 // --------------------
@@ -179,6 +205,12 @@ async function loadMonthlyRecords(month, students, classTypes) {
   const results = [];
 
   for (const st of students) {
+     // ✅ startDate가 있는 학생은 그 달부터만 표시
+    const startMonth = getStudentStartMonth(st);
+    if (startMonth && isMonthBefore(month, startMonth)) {
+      continue; // 이 달에는 이 학생 아예 안 보여줌
+    }
+
     const sid = st.id;
     const docId = `${month}_${sid}`;
     const ref = doc(db, "monthly_payments", docId);
@@ -242,8 +274,10 @@ async function loadMonthlyRecords(month, students, classTypes) {
       let partials = Array.isArray(data.partials) ? data.partials : [];
 
       // 학생 classTypes 기준으로 partials 정리: 현재 반만 남기고, 없던 반은 새로 추가
-      partials = partials
-        .filter((p) => studentClasses.includes(p.classType))
+     const keepStatuses = new Set(["paid", "late", "exempt"]); // 필요하면 "partial"도 포함
+ partials = partials
+   .filter((p) => studentClasses.includes(p.classType) || keepStatuses.has(p.status))
+
         .map((p) => {
           const cls = p.classType;
           const base = Number(p.baseAmount) || baseMap[cls] || 0;

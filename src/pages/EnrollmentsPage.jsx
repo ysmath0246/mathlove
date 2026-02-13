@@ -135,34 +135,54 @@ function EnrollmentsPage() {
       });
     }
 
-    // 2) ✅ 중등 클리닉 (middle_clinic_days → 슬롯형 데이터로 펼치기)
-    if (enrollGroup === "middleClinic") {
-      const ref = collection(db, "middle_clinic_days");
-      return onSnapshot(ref, (qs) => {
-        const list = [];
-        qs.docs.forEach((d) => {
-          const data = d.data() || {};
-          ["regular", "extra"].forEach((k) => {
-            const item = data[k];
-            if (!item) return;
+   // 2) ✅ 중등 클리닉 (middle_clinic_days → 슬롯형 데이터로 펼치기)
+if (enrollGroup === "middleClinic") {
+  const ref = collection(db, "middle_clinic_days");
+  return onSnapshot(ref, (qs) => {
+    const list = [];
 
-            list.push({
-              id: `${d.id}_${k}`, // 화면용 id
-              fromNew: false,
-              group: "middleClinic",
-              status: "applied",
-              day: item.day || "",
-              time: item.blockId || "", // A/B
-              studentId: item.studentId || d.id,
-              studentName: item.studentName || "",
-              _srcDocId: d.id,
-              _srcKey: k,
-            });
-          });
+    qs.docs.forEach((d) => {
+      const data = d.data() || {};
+
+      ["regular", "extra"].forEach((k) => {
+        const item = data[k];
+        if (!item) return;
+
+        // ✅ (중요) old schema(루트에 studentName/studentId)도 fallback 처리
+        const resolvedStudentId =
+          item.studentId || data.studentId || d.id;
+
+        const resolvedStudentName =
+          item.studentName || data.studentName || "";
+
+        const resolvedDay =
+          item.day || data.day || "";
+
+        const resolvedBlockId =
+          item.blockId || data.blockId || "";
+
+        list.push({
+          id: `${d.id}_${k}`, // 화면용 id
+          fromNew: false,
+          group: "middleClinic",
+          status: "applied",
+
+          day: resolvedDay,
+          time: resolvedBlockId, // A/B
+
+          studentId: resolvedStudentId,
+          studentName: resolvedStudentName,
+
+          _srcDocId: d.id,
+          _srcKey: k,
         });
-        setBaseEnrollments(list);
       });
-    }
+    });
+
+    setBaseEnrollments(list);
+  });
+}
+
 
     // 3) 초등/중등 (기존 enrollments)
     const ref = collection(db, "enrollments");

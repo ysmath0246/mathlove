@@ -1,4 +1,4 @@
-// src/App.js
+// ✅ src/App.js
 import React, { useEffect, useState } from "react";
 import "./index.css";
 
@@ -6,6 +6,9 @@ import NoticesPage from "./pages/NoticesPage";
 import HolidaysPage from "./pages/HolidaysPage";
 import PointsPage from "./pages/PointsPage";
 import EnrollmentsPage from "./pages/EnrollmentsPage";
+
+// ✅ (추가) 수강신청 학생별/클래스타입별 페이지
+import EnrollmentsByStudentPage from "./pages/EnrollmentsByStudentPage";
 
 // 🔽 새로 추가된 페이지들
 import StudentsPage from "./pages/StudentsPage";
@@ -162,9 +165,16 @@ function App() {
           />
 
           <NavItem
-            label="수강신청"
+            label="수강신청(시간표)"
             active={activePage === "enrollments"}
             onClick={() => setActivePage("enrollments")}
+          />
+
+          {/* ✅ (추가) 수강신청 학생별/클래스타입별 */}
+          <NavItem
+            label="수강신청(학생별)"
+            active={activePage === "enrollmentsByStudent"}
+            onClick={() => setActivePage("enrollmentsByStudent")}
           />
 
           {/* 🔽 새로 추가된 메뉴들 */}
@@ -220,7 +230,14 @@ function App() {
             {activePage === "notices" && <NoticesPage />}
             {activePage === "holidays" && <HolidaysPage />}
             {activePage === "points" && <PointsPage />}
+
+            {/* ✅ 수강신청(시간표) */}
             {activePage === "enrollments" && <EnrollmentsPage />}
+
+            {/* ✅ (추가) 수강신청(학생별) */}
+            {activePage === "enrollmentsByStudent" && (
+              <EnrollmentsByStudentPage />
+            )}
 
             {/* 🔽 새 페이지 렌더링 */}
             {activePage === "students" && <StudentsPage />}

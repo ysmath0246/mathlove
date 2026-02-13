@@ -12,12 +12,10 @@ import {
   orderBy,
   addDoc,
   updateDoc,
-  where, // ✅ newenroll 필터용
 } from "firebase/firestore";
 
 const TAB_LABELS = {
   current: "재원생",
-  new: "신규생",
   quit: "퇴원생",
 };
 
@@ -27,7 +25,6 @@ function StudentsPage() {
   const [tab, setTab] = useState("current");
 
   const [currentStudents, setCurrentStudents] = useState([]);
-  const [newStudents, setNewStudents] = useState([]);
   const [quitStudents, setQuitStudents] = useState([]);
 
   const [search, setSearch] = useState("");
@@ -37,7 +34,11 @@ function StudentsPage() {
   // 🔹 반 설정(class_types) 목록
   const [classTypes, setClassTypes] = useState([]);
 
-  // 신규 등록 폼 토글 + 상태 (재원생 직접 등록용)
+  // ✅ 년생/반 필터
+  const [filterBirthYear, setFilterBirthYear] = useState(""); // 예: "2015"
+  const [filterClassLabel, setFilterClassLabel] = useState(""); // 예: "중등부"
+
+  // 재원생 직접 등록 폼
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newStudent, setNewStudent] = useState({
     name: "",
@@ -54,16 +55,6 @@ function StudentsPage() {
     return onSnapshot(qy, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setCurrentStudents(list);
-    });
-  }, []);
-
-  // ───── 신규생(newstudent) 구독 ─────
-  useEffect(() => {
-    const ref = collection(db, "newstudent");
-    const qy = query(ref, orderBy("studentName", "asc"));
-    return onSnapshot(qy, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setNewStudents(list);
     });
   }, []);
 
@@ -84,7 +75,6 @@ function StudentsPage() {
     return onSnapshot(qy, (snap) => {
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        // isActive가 false인 건 숨기고, undefined / true는 표시
         .filter((ct) => ct.isActive !== false);
       setClassTypes(list);
     });
@@ -93,38 +83,71 @@ function StudentsPage() {
   // 현재 탭 리스트
   const activeList = useMemo(() => {
     if (tab === "current") return currentStudents;
-    if (tab === "new") return newStudents;
     if (tab === "quit") return quitStudents;
     return [];
-  }, [tab, currentStudents, newStudents, quitStudents]);
+  }, [tab, currentStudents, quitStudents]);
 
-  // 검색
+  // ✅ 출생년도 추출 함수 (2015-03-02 / 20150302 / 2015.03.02 등 대응)
+  const getBirthYear = (s) => {
+    const raw =
+      (s.studentBirth || s.birth || s.birthday || s.birthDate || "").toString();
+    if (!raw) return "";
+
+    // 1) 2015-03-02 / 2015.03.02 / 2015/03/02
+    const m1 = raw.match(/^(\d{4})[-./]/);
+    if (m1) return m1[1];
+
+    // 2) 20150302 / 201503 / 2015xxxx
+    const m2 = raw.match(/^(\d{4})/);
+    if (m2) return m2[1];
+
+    return "";
+  };
+
+  // ✅ 필터 옵션(년생) 만들기: 현재 activeList 기준이 아니라 "재원생 전체" 기준이 보통 편해서 currentStudents로 뽑음
+  const birthYearOptions = useMemo(() => {
+    const set = new Set();
+    currentStudents.forEach((s) => {
+      const y = getBirthYear(s);
+      if (y) set.add(y);
+    });
+    // 내림차순(최근 출생이 위로) 정렬
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [currentStudents]);
+
+  // 검색 + 년생 + 반 필터
   const filteredList = useMemo(() => {
     const kw = search.trim();
-    if (!kw) return activeList;
+    const birthYear = filterBirthYear.trim();
+    const classLabel = filterClassLabel.trim();
 
     return activeList.filter((s) => {
       const name = (s.name || s.studentName || "").toString();
       const parentPhone =
-        (s.parentPhone ||
-          s.parentTel ||
-          s.parentPhoneNumber ||
-          "").toString();
+        (s.parentPhone || s.parentTel || s.parentPhoneNumber || "").toString();
       const studentPhone = (s.studentPhone || s.phone || "").toString();
 
-      return (
+      // 🔎 검색
+      const matchSearch =
+        !kw ||
         name.includes(kw) ||
         parentPhone.includes(kw) ||
-        studentPhone.includes(kw)
-      );
+        studentPhone.includes(kw);
+
+      // 🗓️ 년생
+      const y = getBirthYear(s);
+      const matchYear = !birthYear || y === birthYear;
+
+      // 🏷️ 반(학생 문서에 classTypes: ["초등부", ...] 형태)
+      const types = Array.isArray(s.classTypes) ? s.classTypes : [];
+      const matchClass = !classLabel || types.includes(classLabel);
+
+      return matchSearch && matchYear && matchClass;
     });
-  }, [activeList, search]);
+  }, [activeList, search, filterBirthYear, filterClassLabel]);
 
   // 페이지 계산
-  const totalPages = Math.max(
-    1,
-    Math.ceil((filteredList.length || 1) / PAGE_SIZE)
-  );
+  const totalPages = Math.max(1, Math.ceil((filteredList.length || 1) / PAGE_SIZE));
   const safePageIndex =
     pageIndex >= totalPages ? totalPages - 1 : pageIndex < 0 ? 0 : pageIndex;
 
@@ -144,43 +167,14 @@ function StudentsPage() {
     setSelectedId(null);
     setSearch("");
     setPageIndex(0);
+    setFilterBirthYear("");
+    setFilterClassLabel("");
   }, [tab]);
 
-  // 검색 바뀔 때 페이지 0으로
+  // 검색/필터 바뀔 때 페이지 0으로
   useEffect(() => {
     setPageIndex(0);
-  }, [search]);
-
-  // ───── 신규생에서 폼으로 불러오기 (재원생 등록용) ─────
-  const handleLoadFromNewStudent = () => {
-    const src = selectedId
-      ? newStudents.find((s) => s.id === selectedId) || null
-      : null;
-
-    if (!src) {
-      alert("신규생 탭에서 불러올 학생을 먼저 선택해 주세요.");
-      return;
-    }
-
-    const name = src.name || src.studentName || "";
-    const birth =
-      src.studentBirth || src.birth || src.birthday || src.birthDate || "";
-    const parentPhone =
-      src.parentPhone || src.parentTel || src.parentPhoneNumber || "";
-    const studentPhone = src.studentPhone || src.phone || "";
-    const startDate =
-      src.startDate || src.classStartDate || src.beginDate || "";
-
-    setNewStudent({
-      name,
-      birth,
-      parentPhone,
-      studentPhone,
-      startDate,
-    });
-
-    setShowRegisterForm(true);
-  };
+  }, [search, filterBirthYear, filterClassLabel]);
 
   // ───── 재원생 신규 등록(직접 입력) ─────
   const handleRegisterNewStudent = async () => {
@@ -205,7 +199,6 @@ function StudentsPage() {
         studentPhone,
         startDate,
         status: "재원생",
-        // 처음 등록 시에는 반 정보 비워둠(나중에 상세에서 선택)
         classTypes: [],
         createdAt: serverTimestamp(),
       };
@@ -226,70 +219,6 @@ function StudentsPage() {
     } catch (e) {
       console.error("학생 등록 오류:", e);
       alert("학생 등록 중 오류가 발생했습니다.");
-    }
-  };
-
-  // ───── 신규생 → 재원생 승인 ─────
-  const handleApproveNewStudent = async (student) => {
-    if (
-      !window.confirm(
-        `${student.name || student.studentName || ""} 학생을 재원생으로 승인할까요?`
-      )
-    )
-      return;
-
-    try {
-      const { id, ...rest } = student;
-
-      const name = student.name || student.studentName || "";
-      const birth =
-        student.studentBirth ||
-        student.birth ||
-        student.birthday ||
-        student.birthDate ||
-        "";
-      const parentPhone =
-        student.parentPhone ||
-        student.parentTel ||
-        student.parentPhoneNumber ||
-        "";
-      const studentPhone = student.studentPhone || student.phone || "";
-      const startDate =
-        student.startDate ||
-        student.classStartDate ||
-        student.beginDate ||
-        "";
-
-      // schedules 있으면 그대로, 없으면 비워두기
-      const schedulesArray =
-        Array.isArray(student.schedules) && student.schedules.length > 0
-          ? student.schedules
-          : [];
-
-      await setDoc(doc(db, "students", student.id), {
-        ...rest,
-        name,
-        studentName: name,
-        birth,
-        studentBirth: birth,
-        parentPhone,
-        studentPhone,
-        startDate,
-        schedules: schedulesArray,
-        status: "재원생",
-        // newstudent에 classTypes 있으면 유지, 없으면 빈 배열
-        classTypes: Array.isArray(student.classTypes)
-          ? student.classTypes
-          : [],
-        approvedAt: serverTimestamp(),
-      });
-
-      await deleteDoc(doc(db, "newstudent", student.id));
-
-      alert("재원생으로 승인되었습니다.");
-    } catch (e) {
-      console.error("신규생 승인 오류:", e);
-      alert("승인 중 오류가 발생했습니다.");
     }
   };
 
@@ -340,10 +269,7 @@ function StudentsPage() {
         startDate,
         schedules: schedulesArray,
         status: "퇴원",
-        // 퇴원할 때도 classTypes 유지
-        classTypes: Array.isArray(student.classTypes)
-          ? student.classTypes
-          : [],
+        classTypes: Array.isArray(student.classTypes) ? student.classTypes : [],
         quitAt: serverTimestamp(),
       });
 
@@ -403,10 +329,7 @@ function StudentsPage() {
         startDate,
         schedules: schedulesArray,
         status: "재원생",
-        // 복귀 시에도 기존 classTypes 유지
-        classTypes: Array.isArray(student.classTypes)
-          ? student.classTypes
-          : [],
+        classTypes: Array.isArray(student.classTypes) ? student.classTypes : [],
         restoredFromQuitAt: serverTimestamp(),
       });
 
@@ -419,9 +342,16 @@ function StudentsPage() {
     }
   };
 
+  const resetFilters = () => {
+    setSearch("");
+    setFilterBirthYear("");
+    setFilterClassLabel("");
+    setPageIndex(0);
+  };
+
   return (
     <div style={{ fontSize: 13 }}>
-      {/* 헤더 + 탭 + 신규등록/불러오기 버튼 */}
+      {/* 헤더 + 탭 + 등록 버튼 */}
       <div
         style={{
           display: "flex",
@@ -435,22 +365,6 @@ function StudentsPage() {
         <h2 style={{ fontSize: 18, fontWeight: "bold" }}>학생 관리</h2>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            type="button"
-            onClick={handleLoadFromNewStudent}
-            style={{
-              padding: "4px 10px",
-              borderRadius: 4,
-              border: "1px solid #0ea5e9",
-              background: "white",
-              color: "#0ea5e9",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            신규생에서 불러오기
-          </button>
-
           <button
             type="button"
             onClick={() => setShowRegisterForm((v) => !v)}
@@ -475,7 +389,7 @@ function StudentsPage() {
               overflow: "hidden",
             }}
           >
-            {["current", "new", "quit"].map((t) => (
+            {["current", "quit"].map((t) => (
               <button
                 key={t}
                 type="button"
@@ -485,8 +399,7 @@ function StudentsPage() {
                   fontSize: 12,
                   border: "none",
                   cursor: "pointer",
-                  background:
-                    tab === t ? "#3b82f6" : "rgba(255,255,255,0.9)",
+                  background: tab === t ? "#3b82f6" : "rgba(255,255,255,0.9)",
                   color: tab === t ? "white" : "#374151",
                   fontWeight: "bold",
                 }}
@@ -509,23 +422,11 @@ function StudentsPage() {
             background: "#f9fafb",
           }}
         >
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: "bold",
-              marginBottom: 8,
-            }}
-          >
+          <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 8 }}>
             신규 재원생 등록
           </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              marginBottom: 6,
-            }}
-          >
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
             <input
               placeholder="학생 이름"
               value={newStudent.name}
@@ -546,10 +447,7 @@ function StudentsPage() {
               placeholder="수업 시작일 (예: 2025-03-02)"
               value={newStudent.startDate}
               onChange={(e) =>
-                setNewStudent((prev) => ({
-                  ...prev,
-                  startDate: e.target.value,
-                }))
+                setNewStudent((prev) => ({ ...prev, startDate: e.target.value }))
               }
               style={inputStyle}
             />
@@ -557,10 +455,7 @@ function StudentsPage() {
               placeholder="학부모 전화번호"
               value={newStudent.parentPhone}
               onChange={(e) =>
-                setNewStudent((prev) => ({
-                  ...prev,
-                  parentPhone: e.target.value,
-                }))
+                setNewStudent((prev) => ({ ...prev, parentPhone: e.target.value }))
               }
               style={inputStyle}
             />
@@ -568,10 +463,7 @@ function StudentsPage() {
               placeholder="학생 전화번호"
               value={newStudent.studentPhone}
               onChange={(e) =>
-                setNewStudent((prev) => ({
-                  ...prev,
-                  studentPhone: e.target.value,
-                }))
+                setNewStudent((prev) => ({ ...prev, studentPhone: e.target.value }))
               }
               style={inputStyle}
             />
@@ -615,7 +507,7 @@ function StudentsPage() {
           {/* 왼쪽: 학생 목록 */}
           <div
             style={{
-              width: 260,
+              width: 280,
               borderRight: "1px solid #e5e7eb",
               paddingRight: 8,
               display: "flex",
@@ -624,15 +516,11 @@ function StudentsPage() {
             }}
           >
             <div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  marginBottom: 4,
-                }}
-              >
+              <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 4 }}>
                 {TAB_LABELS[tab]} 목록 ({activeList.length}명)
               </div>
+
+              {/* ✅ 검색 + 필터 */}
               <input
                 type="text"
                 placeholder="이름 / 학부모폰 / 학생폰 검색"
@@ -644,9 +532,56 @@ function StudentsPage() {
                   fontSize: 12,
                   borderRadius: 4,
                   border: "1px solid #d1d5db",
-                  marginBottom: 4,
+                  marginBottom: 6,
                 }}
               />
+
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                <select
+                  value={filterBirthYear}
+                  onChange={(e) => setFilterBirthYear(e.target.value)}
+                  style={{ ...inputStyle, minWidth: 120 }}
+                >
+                  <option value="">년생 전체</option>
+                  {birthYearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}년생
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filterClassLabel}
+                  onChange={(e) => setFilterClassLabel(e.target.value)}
+                  style={{ ...inputStyle, minWidth: 120 }}
+                >
+                  <option value="">반 전체</option>
+                  {classTypes.map((ct) => (
+                    <option key={ct.id} value={ct.label || ""}>
+                      {ct.label || "(라벨없음)"}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 4,
+                    border: "1px solid #d1d5db",
+                    background: "white",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  필터 초기화
+                </button>
+              </div>
+
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4 }}>
+                표시: <b>{filteredList.length}</b>명
+              </div>
 
               {/* 페이지 네비게이션 */}
               <div
@@ -673,26 +608,20 @@ function StudentsPage() {
                   ◀
                 </button>
                 <span style={{ color: "#6b7280" }}>
-                  {totalPages === 0
-                    ? "0 / 0"
-                    : `${safePageIndex + 1} / ${totalPages}`}
+                  {totalPages === 0 ? "0 / 0" : `${safePageIndex + 1} / ${totalPages}`}
                 </span>
                 <button
                   type="button"
                   onClick={() =>
-                    setPageIndex((p) =>
-                      Math.min(totalPages - 1, (p || 0) + 1)
-                    )
+                    setPageIndex((p) => Math.min(totalPages - 1, (p || 0) + 1))
                   }
                   disabled={safePageIndex >= totalPages - 1}
                   style={{
                     padding: "2px 6px",
                     borderRadius: 4,
                     border: "1px solid #d1d5db",
-                    background:
-                      safePageIndex >= totalPages - 1 ? "#f9fafb" : "white",
-                    cursor:
-                      safePageIndex >= totalPages - 1 ? "default" : "pointer",
+                    background: safePageIndex >= totalPages - 1 ? "#f9fafb" : "white",
+                    cursor: safePageIndex >= totalPages - 1 ? "default" : "pointer",
                   }}
                 >
                   ▶
@@ -709,37 +638,20 @@ function StudentsPage() {
               }}
             >
               {pagedList.length === 0 ? (
-                <div
-                  style={{
-                    padding: 8,
-                    fontSize: 12,
-                    color: "#9ca3af",
-                  }}
-                >
-                  해당 페이지에 학생이 없습니다.
+                <div style={{ padding: 8, fontSize: 12, color: "#9ca3af" }}>
+                  해당 조건에 학생이 없습니다.
                 </div>
               ) : (
-                <ul
-                  style={{
-                    listStyle: "none",
-                    margin: 0,
-                    padding: 0,
-                  }}
-                >
+                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {pagedList.map((s) => {
                     const name = s.name || s.studentName || "(이름 없음)";
                     const birth =
-                      s.studentBirth ||
-                      s.birth ||
-                      s.birthday ||
-                      s.birthDate ||
-                      "";
+                      s.studentBirth || s.birth || s.birthday || s.birthDate || "";
                     const parentPhone =
-                      s.parentPhone ||
-                      s.parentTel ||
-                      s.parentPhoneNumber ||
-                      "";
+                      s.parentPhone || s.parentTel || s.parentPhoneNumber || "";
                     const isSelected = s.id === selectedId;
+
+                    const types = Array.isArray(s.classTypes) ? s.classTypes : [];
 
                     return (
                       <li
@@ -752,30 +664,39 @@ function StudentsPage() {
                           borderBottom: "1px solid #f3f4f6",
                         }}
                       >
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          {name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#6b7280",
-                          }}
-                        >
+                        <div style={{ fontSize: 13, fontWeight: "bold" }}>{name}</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>
                           {birth || "생년월일 미입력"}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#9ca3af",
-                          }}
-                        >
+                        <div style={{ fontSize: 11, color: "#9ca3af" }}>
                           학부모: {parentPhone || "-"}
                         </div>
+
+                        {/* ✅ 반 표시(있으면) */}
+                        {types.length > 0 && (
+                          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {types.slice(0, 3).map((t) => (
+                              <span
+                                key={t}
+                                style={{
+                                  fontSize: 10,
+                                  padding: "2px 6px",
+                                  borderRadius: 999,
+                                  border: "1px solid #e5e7eb",
+                                  background: "#f9fafb",
+                                  color: "#374151",
+                                }}
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            {types.length > 3 && (
+                              <span style={{ fontSize: 10, color: "#6b7280" }}>
+                                +{types.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </li>
                     );
                   })}
@@ -794,23 +715,9 @@ function StudentsPage() {
                   borderBottom: "1px dashed #e5e7eb",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "bold",
-                    marginBottom: 2,
-                  }}
-                >
-                  {selectedStudent.name ||
-                    selectedStudent.studentName ||
-                    "(이름 없음)"}{" "}
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "#6b7280",
-                      marginLeft: 4,
-                    }}
-                  >
+                <div style={{ fontSize: 14, fontWeight: "bold", marginBottom: 2 }}>
+                  {selectedStudent.name || selectedStudent.studentName || "(이름 없음)"}{" "}
+                  <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 4 }}>
                     [{TAB_LABELS[tab]}]
                   </span>
                 </div>
@@ -833,10 +740,8 @@ function StudentsPage() {
               key={`${selectedId || "none"}_${tab}`}
               tab={tab}
               student={selectedStudent}
-              onApprove={handleApproveNewStudent}
               onQuit={handleQuitStudent}
               onRestore={handleRestoreStudent}
-              // 🔹 반 목록 전달
               classTypes={classTypes}
             />
           </div>
@@ -846,15 +751,8 @@ function StudentsPage() {
   );
 }
 
-/** 상세 정보 + 스케줄/신규상담 정보 */
-function StudentDetail({
-  tab,
-  student,
-  onApprove,
-  onQuit,
-  onRestore,
-  classTypes,
-}) {
+/** 상세 정보 + 스케줄 */
+function StudentDetail({ tab, student, onQuit, onRestore, classTypes }) {
   const [editName, setEditName] = useState("");
   const [editBirth, setEditBirth] = useState("");
   const [editParentPhone, setEditParentPhone] = useState("");
@@ -865,10 +763,6 @@ function StudentDetail({
   // 🔹 학생이 속한 반들 (문자 label 배열)
   const [editClassTypes, setEditClassTypes] = useState([]);
 
-  // 신규 상담 & 신청 정보
-  const [newEnrolls, setNewEnrolls] = useState([]); // newenroll 컬렉션
-  const [operationEnroll, setOperationEnroll] = useState(null); // operation_enroll
-
   useEffect(() => {
     if (!student) {
       setEditName("");
@@ -877,8 +771,6 @@ function StudentDetail({
       setEditStudentPhone("");
       setEditStartDate("");
       setEditSchedules([]);
-      setNewEnrolls([]);
-      setOperationEnroll(null);
       setEditClassTypes([]);
       return;
     }
@@ -902,60 +794,12 @@ function StudentDetail({
     }
   }, [student]);
 
-  // 신규생 탭일 때만 newenroll / operation_enroll 읽기
-  useEffect(() => {
-    if (!student || tab !== "new") {
-      setNewEnrolls([]);
-      setOperationEnroll(null);
-      return;
-    }
-
-    const sname = student.name || student.studentName || "";
-    const phone =
-      student.parentPhone || student.parentTel || student.parentPhoneNumber || "";
-    const birth = student.studentBirth || student.birth || "";
-
-    // newenroll: 학생 이름 + 학부모폰(+생년월일) 기준으로 검색
-    const baseRef = collection(db, "newenroll");
-    const conds = [];
-    if (sname) conds.push(where("studentName", "==", sname));
-    if (phone) conds.push(where("parentPhone", "==", phone));
-    if (birth) conds.push(where("studentBirth", "==", birth));
-
-    const qRef = conds.length ? query(baseRef, ...conds) : baseRef;
-
-    const unsub1 = onSnapshot(qRef, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setNewEnrolls(list);
-    });
-
-    // operation_enroll: 문서 ID = 학생 이름
-    const opRef = doc(db, "operation_enroll", sname || "___dummy___");
-    const unsub2 = onSnapshot(opRef, (snap) => {
-      if (snap.exists()) {
-        setOperationEnroll({ id: snap.id, ...snap.data() });
-      } else {
-        setOperationEnroll(null);
-      }
-    });
-
-    return () => {
-      unsub1();
-      unsub2();
-    };
-  }, [student, tab]);
-
   if (!student) return null;
 
   const saveBasicInfo = async () => {
     if (!editName.trim()) return alert("이름은 비워둘 수 없어요!");
 
-    const col =
-      tab === "current"
-        ? "students"
-        : tab === "new"
-        ? "newstudent"
-        : "students_quit";
+    const col = tab === "current" ? "students" : "students_quit";
 
     await updateDoc(doc(db, col, student.id), {
       name: editName,
@@ -965,7 +809,6 @@ function StudentDetail({
       parentPhone: editParentPhone,
       studentPhone: editStudentPhone,
       startDate: editStartDate,
-      // 🔹 반 정보 저장
       classTypes: editClassTypes,
     });
 
@@ -1005,15 +848,9 @@ function StudentDetail({
     alert("📌 스케줄 저장 완료!");
   };
 
-  const consultType = student.consultType || "";
-  const siblingName = student.siblingName || "";
-  const referralName = student.referralName || "";
-
   const toggleClassType = (label) => {
     setEditClassTypes((prev) =>
-      prev.includes(label)
-        ? prev.filter((t) => t !== label)
-        : [...prev, label]
+      prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]
     );
   };
 
@@ -1120,21 +957,6 @@ function StudentDetail({
 
       {/* 위쪽 액션 버튼 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {tab === "new" && (
-          <button
-            onClick={() => onApprove && onApprove(student)}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 4,
-              background: "#16a34a",
-              color: "white",
-              cursor: "pointer",
-            }}
-          >
-            ▶ 재원 등록
-          </button>
-        )}
-
         {tab === "current" && (
           <button
             onClick={() => onQuit && onQuit(student)}
@@ -1166,7 +988,7 @@ function StudentDetail({
         )}
       </div>
 
-      {/* 재원생: 스케줄 편집 폼 (신규/퇴원 탭에서는 아예 안보이게) */}
+      {/* 재원생: 스케줄 편집 */}
       {tab === "current" && (
         <div
           style={{
@@ -1177,9 +999,7 @@ function StudentDetail({
             marginBottom: 10,
           }}
         >
-          <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-            수업 스케줄 수정
-          </div>
+          <div style={{ fontWeight: "bold", marginBottom: 6 }}>수업 스케줄 수정</div>
 
           {editSchedules.map((s, i) => (
             <div key={i} style={{ display: "flex", gap: 8, marginBottom: 4 }}>
@@ -1244,88 +1064,6 @@ function StudentDetail({
           </button>
         </div>
       )}
-
-      {/* 신규생: 상담 + newenroll + 집중학습반 신청 정보 보여주기 */}
-      {tab === "new" && (
-        <div
-          style={{
-            border: "1px solid #e5e7eb",
-            padding: 10,
-            borderRadius: 8,
-            background: "#f9fafb",
-          }}
-        >
-          <div style={{ fontWeight: "bold", marginBottom: 6 }}>
-            신규 상담 / 신청 정보
-          </div>
-
-          <div style={{ marginBottom: 4 }}>
-            <b>상담 방법(consultType)</b> : {consultType || "-"}
-          </div>
-          <div style={{ marginBottom: 4 }}>
-            <b>재원 형제자매 이름(siblingName)</b> : {siblingName || "-"}
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <b>소개해 주신 분(referralName)</b> : {referralName || "-"}
-          </div>
-
-          <div style={{ borderTop: "1px dashed #d1d5db", margin: "6px 0" }} />
-
-          <div style={{ marginBottom: 4, fontWeight: "bold" }}>
-            📅 2026 수강 신청(newenroll)
-          </div>
-          {newEnrolls.length === 0 ? (
-            <div style={{ fontSize: 11, color: "#9ca3af" }}>
-              newenroll 컬렉션에 신청 내역이 없습니다.
-            </div>
-          ) : (
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 11,
-                marginBottom: 8,
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#e5e7eb" }}>
-                  <th style={thSmall}>반</th>
-                  <th style={thSmall}>요일</th>
-                  <th style={thSmall}>시간</th>
-                  <th style={thSmall}>라벨</th>
-                  <th style={thSmall}>상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {newEnrolls.map((e) => (
-                  <tr key={e.id}>
-                    <td style={tdSmall}>{e.group || "-"}</td>
-                    <td style={tdSmall}>{e.day || "-"}</td>
-                    <td style={tdSmall}>{e.time || "-"}</td>
-                    <td style={tdSmall}>{e.label || "-"}</td>
-                    <td style={tdSmall}>{e.status || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <div style={{ borderTop: "1px dashed #d1d5db", margin: "6px 0" }} />
-
-          <div style={{ marginBottom: 4, fontWeight: "bold" }}>
-            ✏ 집중학습반 신청(operation_enroll)
-          </div>
-          {operationEnroll ? (
-            <div style={{ fontSize: 11 }}>
-              집중학습반 시간: <b>{operationEnroll.time || "-"}</b>
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: "#9ca3af" }}>
-              operation_enroll 컬렉션에 집중학습반 신청 내역이 없습니다.
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1341,17 +1079,6 @@ const inputStyle = {
   borderRadius: 4,
   border: "1px solid #d1d5db",
   minWidth: 140,
-};
-
-const thSmall = {
-  textAlign: "left",
-  padding: 4,
-  borderBottom: "1px solid #d1d5db",
-};
-
-const tdSmall = {
-  padding: 4,
-  borderBottom: "1px solid #e5e7eb",
 };
 
 export default StudentsPage;
